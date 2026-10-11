@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TeamClock</title>
+<style>
+:root{--bg:#f5f7f6;--card:#fff;--text:#16201c;--muted:#5d6a64;--line:#dce3df;--ac:#0f766e;--act:#fff;--warn:#b45309;--ok:#15803d;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111815;--card:#1a2420;--text:#eaf1ed;--muted:#9fb0a8;--line:#2b3832;--ac:#2dd4bf;--act:#0b1512;--warn:#f59e0b;--ok:#4ade80}}
+:root[data-theme="dark"]{--bg:#111815;--card:#1a2420;--text:#eaf1ed;--muted:#9fb0a8;--line:#2b3832;--ac:#2dd4bf;--act:#0b1512;--warn:#f59e0b;--ok:#4ade80}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.w{max-width:760px;margin:0 auto;padding:16px 14px 50px}
+h1{font-size:1.35rem;margin:0}h2{font-size:1rem;margin:0 0 10px}
+.sub{color:var(--muted);font-size:.85rem;margin:2px 0 14px}
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tab{flex:1;text-align:center;padding:9px;border:1px solid var(--line);border-radius:9px;background:var(--card);cursor:pointer;font-weight:600}
+.tab.on{background:var(--ac);color:var(--act);border-color:var(--ac)}
+.c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+button,select,input,textarea{font:inherit;color:var(--text)}
+select,input,textarea{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+textarea{min-height:70px}
+button{padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer;font-weight:600}
+button.p{background:var(--ac);color:var(--act);border-color:var(--ac)}
+button.big{width:100%;padding:16px;font-size:1.1rem}
+button:disabled{opacity:.5}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.st{background:var(--bg);border-radius:9px;padding:10px}
+.st b{display:block;font-size:1.2rem}.st span{color:var(--muted);font-size:.78rem}
+.r{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.m{color:var(--muted);font-size:.8rem}
+.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:.75rem;background:var(--bg);border:1px solid var(--line)}
+.ok{color:var(--ok)}.wn{color:var(--warn)}
+.row{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="w">
+  <h1>TeamClock</h1>
+  <div class="sub">Sign in and out, track hours, request time off. Demo with sample data.</div>
+  <div class="tabs"><div class="tab" data-act="role-staff" id="t1">Staff view</div><div class="tab" data-act="role-mgr" id="t2">Manager view</div></div>
+  <div id="app"></div>
+  <p class="m">Pay figures are rough estimates of gross pay only, before tax, National Insurance, holiday pay and pension. This is not payroll. Demo data is stored in your browser.</p>
+</div>
+<script>
+const KEY="teamclock_demo_v1";
+let S,role="staff",me="p1",aiOut=null,aiText="",sample=null,downloads=null;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9);
+const fh=h=>(Math.round(h*10)/10).toFixed(1);
+const gbp=n=>"£"+n.toFixed(2);
+const tm=iso=>new Date(iso).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+const dt=iso=>new Date(iso).toLocaleDateString([],{weekday:"short",day:"numeric",month:"short"});
+function monday(d){const x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-((x.getDay()+6)%7));return x}
+function seed(){
+  const people=[
+    {id:"p1",name:"Amara Okafor",type:"Manager",rate:22,hrs:40,mult:1.5},
+    {id:"p2",name:"Ben Carter",type:"Staff",rate:14,hrs:37.5,mult:1.5},
+    {id:"p3",name:"Chloe Singh",type:"Part-time",rate:13,hrs:16,mult:1.5},
+    {id:"p4",name:"Dan Reeves",type:"Day casual",rate:13,hrs:40,mult:1.5},
+    {id:"p5",name:"Eve Marsh",type:"Contractor",rate:28,hrs:0,mult:1}];
+  const shifts=[],m=monday(new Date()),now=new Date();
+  const add=(pid,d,sh,sm,eh,em)=>{const a=new Date(m);a.setDate(a.getDate()+d);a.setHours(sh,sm,0,0);const b=new Date(a);b.setHours(eh,em,0,0);
+    if(a>now)return;shifts.push({id:uid(),pid,s:a.toISOString(),e:b>now?null:b.toISOString()})};
+  for(let d=0;d<5;d++){add("p1",d,8,0,17,0);d===2?add("p2",d,8,0,18,30):add("p2",d,8,0,16,30)}
+  [1,3].forEach(d=>add("p3",d,9,0,17,0));add("p4",4,7,0,15,0);[0,1,2].forEach(d=>add("p5",d,9,0,17,0));
+  return{people,shifts,off:[{id:uid(),pid:"p2",from:ymd(addDays(new Date(),9)),to:ymd(addDays(new Date(),10)),note:"Family event",status:"pending"}]};
+}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
+function ymd(d){const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0")}
+function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}if(!S||!S.people)S=seed()}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+const P=id=>S.people.find(p=>p.id===id);
+const openShift=pid=>S.shifts.find(x=>x.pid===pid&&!x.e);
+function split(p,t){let n=t,o=0;if(p.hrs>0&&t>p.hrs){n=p.hrs;o=t-p.hrs}return{n,o,pay:n*p.rate,opay:o*p.rate*p.mult}}
+function weekTot(pid,mon){const p=P(pid),end=addDays(mon,7);let t=0;
+  S.shifts.forEach(x=>{if(x.pid!==pid)return;const s=new Date(x.s);if(s>=mon&&s<end)t+=((x.e?new Date(x.e):new Date())-s)/36e5});
+  return Object.assign({t},split(p,t))}
+function monthTot(pid){const p=P(pid),now=new Date(),wk={};
+  S.shifts.forEach(x=>{if(x.pid!==pid)return;const s=new Date(x.s);if(s.getMonth()!==now.getMonth()||s.getFullYear()!==now.getFullYear())return;
+    const k=monday(s).getTime();wk[k]=(wk[k]||0)+((x.e?new Date(x.e):now)-s)/36e5});
+  let t=0,pay=0,opay=0;Object.values(wk).forEach(h=>{const r=split(p,h);t+=h;pay+=r.pay;opay+=r.opay});return{t,pay,opay}}
+function offNext(pid){const mon=addDays(monday(new Date()),7),end=addDays(mon,7);let n=0;
+  S.off.filter(o=>o.pid===pid&&o.status==="approved").forEach(o=>{for(let d=new Date(o.from+"T00:00");d<=new Date(o.to+"T00:00");d=addDays(d,1)){if(d>=mon&&d<end&&d.getDay()%6!==0)n++}});return n}
+
+function render(){
+  $("#t1").classList.toggle("on",role==="staff");$("#t2").classList.toggle("on",role==="mgr");
+  $("#app").innerHTML=role==="staff"?staffView():mgrView();
+  const ta=$("#aimsg");if(ta)ta.value=aiText;
+}
+function staffView(){
+  const p=P(me),os=openShift(me),w=weekTot(me,monday(new Date())),mo=monthTot(me),off=offNext(me);
+  const sched=p.hrs>0?fh(p.hrs-off*(p.hrs/5))+"h":"Invoiced as agreed";
+  const mine=S.off.filter(o=>o.pid===me).slice().reverse().map(o=>`<div class="row"><span>${esc(o.from)} to ${esc(o.to)} <span class="m">${esc(o.note)}</span></span><span class="tag ${o.status==="approved"?"ok":o.status==="declined"?"wn":""}">${esc(o.status)}</span></div>`).join("")||'<p class="m">No requests yet.</p>';
+  return `<div class="c"><label class="m">You are</label><select data-act="who">${S.people.map(q=>`<option value="${q.id}" ${q.id===me?"selected":""}>${esc(q.name)} (${esc(q.type)})</option>`).join("")}</select></div>
+  <div class="c"><h2>${os?"You clocked in at "+tm(os.s):"You're clocked out"}</h2>
+  <button class="big p" data-act="${os?"out":"in"}">${os?"Clock out":"Clock in"}</button></div>
+  <div class="c"><h2>This week</h2><div class="g">
+  <div class="st"><b>${fh(w.n)}h</b><span>Normal hours</span></div>
+  <div class="st"><b class="${w.o>0?"wn":""}">${fh(w.o)}h</b><span>Overtime hours</span></div>
+  <div class="st"><b>${fh(w.t)}h</b><span>Total</span></div></div>
+  <div class="g" style="margin-top:8px">
+  <div class="st"><b>${gbp(w.pay)}</b><span>Est. normal pay</span></div>
+  <div class="st"><b>${gbp(w.opay)}</b><span>Est. overtime pay</span></div>
+  <div class="st"><b>${gbp(w.pay+w.opay)}</b><span>Est. gross this week</span></div></div>
+  <div class="r m">This month so far: ${fh(mo.t)}h, about ${gbp(mo.pay+mo.opay)} gross. ${p.type==="Contractor"?"Contractors are paid by invoice, not payroll.":""}</div></div>
+  <div class="c"><h2>Next week</h2><div class="g"><div class="st"><b>${sched}</b><span>Scheduled (contracted hours)</span></div><div class="st"><b>${off}</b><span>Approved days off</span></div></div></div>
+  <div class="c"><h2>Request time off</h2><div class="g"><div><label class="m">From</label><input type="date" id="of"></div><div><label class="m">To</label><input type="date" id="ot"></div></div>
+  <label class="m" style="display:block;margin-top:8px">Note</label><input id="on" placeholder="Holiday, appointment...">
+  <div class="r"><button class="p" data-act="req">Send request</button></div><div style="margin-top:10px">${mine}</div></div>`;
+}
+function mgrView(){
+  const mon=monday(new Date()),inNow=S.shifts.filter(x=>!x.e);
+  const rows=S.people.map(p=>{const w=weekTot(p.id,mon);return `<tr><td>${esc(p.name)}</td><td>${esc(p.type)}</td><td>${fh(w.n)}</td><td class="${w.o>0?"wn":""}">${fh(w.o)}</td><td>${gbp(w.pay)}</td><td>${gbp(w.opay)}</td><td><b>${gbp(w.pay+w.opay)}</b></td></tr>`}).join("");
+  const tot=S.people.reduce((a,p)=>{const w=weekTot(p.id,mon);return a+w.pay+w.opay},0);
+  const pend=S.off.filter(o=>o.status==="pending").map(o=>`<div class="row"><span>${esc(P(o.pid).name)}: ${esc(o.from)} to ${esc(o.to)} <span class="m">${esc(o.note)}</span></span><span><button class="p" data-act="ap" data-id="${o.id}">Approve</button> <button data-act="de" data-id="${o.id}">Decline</button></span></div>`).join("")||'<p class="m">No pending requests.</p>';
+  let ai="";
+  if(aiOut){if(aiOut.busy)ai='<p class="m">Thinking...</p>';else if(aiOut.err)ai=`<p class="wn">${esc(aiOut.err)}</p>`;else{const r=aiOut.r||{};
+    ai=`<div class="st" style="margin-top:10px"><p style="margin:0 0 6px">${esc(r.summary||"")}</p>${(r.flags||[]).map(f=>`<div class="wn">• ${esc(f)}</div>`).join("")}
+    ${r.fix&&r.fix.name?`<div class="r"><span class="m">Suggested fix: set ${esc(r.fix.name)}'s clock-out on ${esc(r.fix.date)} to ${esc(r.fix.clock_out)}</span><button class="p" data-act="fix">Apply</button></div>`:""}</div>`}}
+  return `<div class="c"><h2>Who's in now (${inNow.length})</h2>${inNow.map(x=>`<div class="row"><span>${esc(P(x.pid).name)} <span class="tag">${esc(P(x.pid).type)}</span></span><span class="m">since ${tm(x.s)}</span></div>`).join("")||'<p class="m">Nobody is clocked in.</p>'}</div>
+  <div class="c"><h2>This week</h2><div class="tw"><table><tr><th>Name</th><th>Type</th><th>Normal h</th><th>OT h</th><th>Normal £</th><th>OT £</th><th>Est. gross</th></tr>${rows}</table></div>
+  <div class="r"><span class="m">Estimated total: <b>${gbp(tot)}</b> gross</span>${downloads?'<button data-act="csv">Export CSV</button>':""}</div></div>
+  <div class="c"><h2>Time-off requests</h2>${pend}</div>
+  <div class="c"><h2>AI helper</h2><p class="m" style="margin-top:0">Paste a message like "Dave forgot to clock out, he left at 5". The helper suggests a correction for you to approve. It never calculates pay.${sample?"":" The AI buttons only work in the Claude-hosted version of this demo."}</p>
+  <textarea id="aimsg" placeholder="Paste a message from a staff member..."></textarea>
+  <div class="r"><button class="p" data-act="aimsg" ${sample?"":"disabled"}>Suggest a fix</button><button data-act="aiweek" ${sample?"":"disabled"}>Review this week</button></div>${ai}</div>
+  <div class="r"><button data-act="reset">Reset demo data</button></div>`;
+}
+async function ask(kind){
+  if(!sample){aiOut={err:"The AI helper isn't available in this view."};render();return}
+  const now=new Date(),mon=monday(now);
+  const team=S.people.map(p=>`${p.name} (${p.type}, contracted ${p.hrs}h/week): ${fh(weekTot(p.id,mon).t)}h this week`).join("\n");
+  const log=S.shifts.slice(-25).map(x=>`${P(x.pid).name}: ${ymd(x.s)} ${tm(x.s)} to ${x.e?tm(x.e):"STILL OPEN"}`).join("\n");
+  const fmt='Reply with ONLY JSON: {"summary":string,"fix":null or {"name":string,"date":"YYYY-MM-DD","clock_out":"HH:MM"},"flags":[string]}.';
+  const prompt=kind==="msg"
+    ?`You help a small-business manager fix timesheet records. Today is ${ymd(now)} (${now.toLocaleTimeString()}).\nTeam:\n${team}\nRecent shifts:\n${log}\n\nMessage from the manager:\n"""${aiText}"""\n\nSuggest a correction only if the message clearly says someone forgot to clock out and gives a time. Otherwise fix is null. summary: one or two plain sentences. Do not calculate pay. ${fmt}`
+    :`You help a small-business manager review this week's timesheet records. Today is ${ymd(now)} (${now.toLocaleTimeString()}).\nTeam:\n${team}\nRecent shifts:\n${log}\n\nFlag shifts still open from a previous day, shifts over 12 hours, anyone over their contracted hours, and anyone with no shifts. summary: two or three plain sentences. Do not mention money. fix must be null. ${fmt}`;
+  aiOut={busy:true};render();
+  try{const r=await sample.json(prompt,{modelTier:"quick"});aiOut={r}}catch(e){aiOut={err:"Couldn't get a suggestion ("+((e&&e.code)||"error")+"). Try again."}}
+  render();
+}
+function applyFix(){
+  const f=aiOut&&aiOut.r&&aiOut.r.fix;if(!f)return;
+  const p=S.people.find(q=>q.name.toLowerCase()===String(f.name).toLowerCase());
+  const sh=p&&S.shifts.filter(x=>x.pid===p.id&&ymd(x.s)===f.date).pop();
+  if(!sh){aiOut={err:"Couldn't find that shift to correct."};render();return}
+  const e=new Date(f.date+"T"+f.clock_out+":00");
+  if(isNaN(e)||e<=new Date(sh.s)){aiOut={err:"That clock-out time doesn't look right."};render();return}
+  sh.e=e.toISOString();save();aiOut={r:{summary:"Done. "+p.name+"'s shift on "+f.date+" now ends at "+f.clock_out+".",flags:[],fix:null}};render();
+}
+function csv(){
+  const mon=monday(new Date());
+  const lines=["name,type,normal_hours,overtime_hours,est_normal_gbp,est_overtime_gbp,est_gross_gbp"].concat(S.people.map(p=>{const w=weekTot(p.id,mon);
+    return [p.name,p.type,fh(w.n),fh(w.o),w.pay.toFixed(2),w.opay.toFixed(2),(w.pay+w.opay).toFixed(2)].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")}));
+  downloads.save({filename:"hours-week-"+ymd(mon)+".csv",data:lines.join("\n")}).catch(()=>{});
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-act]");if(!b||b.tagName==="SELECT")return;const a=b.dataset.act;
+  if(a==="role-staff"){role="staff"}else if(a==="role-mgr"){role="mgr"}
+  else if(a==="in"){if(!openShift(me))S.shifts.push({id:uid(),pid:me,s:new Date().toISOString(),e:null});save()}
+  else if(a==="out"){const o=openShift(me);if(o)o.e=new Date().toISOString();save()}
+  else if(a==="req"){const f=$("#of").value,t=$("#ot").value;if(!f||!t||t<f){alert("Choose a valid date range.");return}
+    S.off.push({id:uid(),pid:me,from:f,to:t,note:$("#on").value.slice(0,80),status:"pending"});save()}
+  else if(a==="ap"||a==="de"){const o=S.off.find(x=>x.id===b.dataset.id);if(o)o.status=a==="ap"?"approved":"declined";save()}
+  else if(a==="aimsg"){ask("msg");return}else if(a==="aiweek"){ask("week");return}
+  else if(a==="fix"){applyFix();return}else if(a==="csv"){csv();return}
+  else if(a==="reset"){S=seed();save();aiOut=null}
+  render();
+});
+document.addEventListener("change",e=>{if(e.target.dataset&&e.target.dataset.act==="who"){me=e.target.value;render()}});
+document.addEventListener("input",e=>{if(e.target.id==="aimsg")aiText=e.target.value});
+load();render();
+(async()=>{try{if(window.claude&&claude.use){sample=await claude.use("sample");downloads=await claude.use("downloads")}}catch(e){}render()})();
+</script>
+</body>
+</html>
